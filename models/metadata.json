@@ -1,0 +1,30 @@
+{
+  "n_features": 3602,
+  "n_train": 4318,
+  "n_test": 1080,
+  "vectorizer": "TF-IDF (1,2)-gram, sublinear_tf, min_df=3",
+  "final_model": "LogisticRegression(class_weight='balanced')",
+  "tasks": {
+    "Sentimen": {
+      "label_col": "Sentiment",
+      "classes": [
+        "Negative",
+        "Positive"
+      ],
+      "test_accuracy": 0.9315,
+      "model_file": "classic_sentiment.joblib"
+    },
+    "Emosi": {
+      "label_col": "Emotion",
+      "classes": [
+        "Anger",
+        "Fear",
+        "Happy",
+        "Love",
+        "Sadness"
+      ],
+      "test_accuracy": 0.6361,
+      "model_file": "classic_emotion.joblib"
+    }
+  }
+}

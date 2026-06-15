@@ -1,0 +1,29 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Soal ujian (RAHASIA) — jangan diunggah ke repo publik
+NLPMalam.pdf
+
+# Catatan: file model di models/ TETAP di-commit karena kecil & dibutuhkan app.
+data/*.zip
+# Cache teks hasil pra-pemrosesan (regenerasi otomatis oleh train.py)
+data/prdect_id_clean.parquet
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Artefak verifikasi browser (Playwright)
+.playwright-mcp/
