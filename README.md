@@ -17,11 +17,11 @@ satu inti: **Streamlit** (web), **FastAPI** (REST API), dan **bot Telegram** (vi
 
 ## 🌐 Demo Live
 
-| Antarmuka | URL |
-|---|---|
-| 🖥️ Aplikasi web (Streamlit) | <https://nlp-streamlit.imadegautama.com> |
-| 🔌 REST API (FastAPI) | <https://nlp-api.imadegautama.com> — coba <https://nlp-api.imadegautama.com/docs> |
-| 🤖 n8n (orkestrator bot Telegram) | <https://nlp.imadegautama.com> |
+| Antarmuka                         | URL                                                                               |
+| --------------------------------- | --------------------------------------------------------------------------------- |
+| 🖥️ Aplikasi web (Streamlit)       | <https://nlp-streamlit.imadegautama.com>                                          |
+| 🔌 REST API (FastAPI)             | <https://nlp-api.imadegautama.com> — coba <https://nlp-api.imadegautama.com/docs> |
+| 🤖 n8n (orkestrator bot Telegram) | <https://nlp.imadegautama.com>                                                    |
 
 Ketiganya di-deploy di **Coolify** lewat pipeline CI/CD (lihat [Deployment](#️-deployment-coolify)).
 
@@ -31,10 +31,10 @@ Ketiganya di-deploy di **Coolify** lewat pipeline CI/CD (lihat [Deployment](#️
 
 1. **Tiga lapis analisis** — Sentimen + Emosi + **Aspect-Based Sentiment Analysis (ABSA)**.
    ABSA memecah ulasan jadi klausa, mendeteksi aspek, lalu menilai sentimen tiap aspek —
-   jadi *"barangnya bagus tapi pengiriman lama"* terbaca: Kualitas = Positif, Pengiriman = Negatif.
+   jadi _"barangnya bagus tapi pengiriman lama"_ terbaca: Kualitas = Positif, Pengiriman = Negatif.
 2. **Explainability** — menampilkan kata (termasuk bigram seperti `tidak sesuai`)
    yang paling mendorong sebuah prediksi, dihitung dari koefisien model linear.
-3. **Penanganan negasi** — kata seperti *tidak, bukan, jangan* sengaja dipertahankan
+3. **Penanganan negasi** — kata seperti _tidak, bukan, jangan_ sengaja dipertahankan
    saat pra-pemrosesan agar makna `tidak bagus` tidak terbalik menjadi `bagus`.
 4. **Lapisan AI (opsional)** — LLM via OpenRouter merangkum hasil secara natural +
    menyusun **saran balasan penjual**. Jika tanpa API key, sistem inti tetap berjalan normal.
@@ -97,23 +97,23 @@ dan (lewat FastAPI) bot Telegram.
 
 ## 📂 Dataset
 
-**PRDECT-ID** (*Indonesian Product Reviews Dataset for Emotions Classification Tasks*) —
+**PRDECT-ID** (_Indonesian Product Reviews Dataset for Emotions Classification Tasks_) —
 ±5.400 ulasan produk dari Tokopedia (29 kategori), dianotasi oleh ahli psikologi klinis.
 Setiap ulasan memiliki label **Sentiment** (Positive/Negative) dan **Emotion**
 (Anger, Fear, Happy, Love, Sadness).
 
 - Sumber: <https://github.com/rhiosutoyo/PRDECT-ID-Indonesian-Product-Reviews-Dataset>
-- Publikasi: Sutoyo dkk., *Data in Brief* (2022). DOI Mendeley: `10.17632/574v66hf2v.1`
+- Publikasi: Sutoyo dkk., _Data in Brief_ (2022). DOI Mendeley: `10.17632/574v66hf2v.1`
 
 **Distribusi label**
 
-| Sentimen | Jumlah | | Emosi | Jumlah |
-|---|---|---|---|---|
-| Negative | 2.821 | | Happy | 1.770 |
-| Positive | 2.579 | | Sadness | 1.202 |
-| | | | Fear | 920 |
-| | | | Love | 809 |
-| | | | Anger | 699 |
+| Sentimen | Jumlah |     | Emosi   | Jumlah |
+| -------- | ------ | --- | ------- | ------ |
+| Negative | 2.821  |     | Happy   | 1.770  |
+| Positive | 2.579  |     | Sadness | 1.202  |
+|          |        |     | Fear    | 920    |
+|          |        |     | Love    | 809    |
+|          |        |     | Anger   | 699    |
 
 Sentimen relatif seimbang; emosi tidak seimbang → evaluasi memakai **macro-F1** dan
 pelatihan memakai `class_weight='balanced'`.
@@ -160,9 +160,11 @@ uvicorn api:app --host 0.0.0.0 --port 8800
 # dengan AI:
 OPENROUTER_API_KEY="sk-or-..." uvicorn api:app --port 8800
 ```
+
 Cek: `curl http://localhost:8800/health`. Lihat endpoint di bawah.
 
 ### Menjalankan Bot Telegram (n8n)
+
 Import `n8n/emosense-bot.workflow.json` ke n8n, set kredensial Telegram, arahkan node
 **Analisis** ke URL API Anda. Panduan lengkap: [`docs/TELEGRAM_N8N.md`](docs/TELEGRAM_N8N.md).
 
@@ -170,36 +172,37 @@ Import `n8n/emosense-bot.workflow.json` ke n8n, set kredensial Telegram, arahkan
 
 ## 📊 Hasil Evaluasi (data uji, 1.080 ulasan)
 
-| Tugas | Accuracy | Macro-F1 |
-|---|---|---|
-| **Sentimen** | 0.9380 | 0.9377 |
-| **Emosi** | 0.6361 | 0.6086 |
+| Tugas        | Accuracy | Macro-F1 |
+| ------------ | -------- | -------- |
+| **Sentimen** | 0.9380   | 0.9377   |
+| **Emosi**    | 0.6361   | 0.6086   |
 
 Perbandingan kandidat model (5-fold CV, macro-F1) yang mendasari pemilihan
 **Logistic Regression**:
 
-| Model | Sentimen | Emosi |
-|---|---|---|
-| **Logistic Regression** | 0.9402 | **0.5870** |
-| Linear SVM | 0.9433 | 0.5752 |
-| Multinomial NB | 0.9404 | 0.4556 |
+| Model                   | Sentimen | Emosi      |
+| ----------------------- | -------- | ---------- |
+| **Logistic Regression** | 0.9402   | **0.5870** |
+| Linear SVM              | 0.9433   | 0.5752     |
+| Multinomial NB          | 0.9404   | 0.4556     |
 
 Logistic Regression menang pada tugas Emosi (yang lebih sulit) dan setara pada Sentimen,
 **sekaligus** menyediakan `predict_proba` (skor keyakinan) dan `coef_` (explainability) —
 karena itu dipilih sebagai model final.
 
 ### Hyperparameter Tuning (GridSearchCV)
-Selain memilih model, hyperparameter di-*tune* dengan **GridSearchCV** (cv=5, `scoring=f1_macro`)
+
+Selain memilih model, hyperparameter di-_tune_ dengan **GridSearchCV** (cv=5, `scoring=f1_macro`)
 di atas `Pipeline(TF-IDF → LogReg)` — vectorizer di-refit per-fold (tanpa kebocoran data).
 
 ```bash
 python src/train.py --tune
 ```
 
-| Tugas | Hyperparameter terbaik | Dampak |
-|---|---|---|
+| Tugas    | Hyperparameter terbaik        | Dampak                       |
+| -------- | ----------------------------- | ---------------------------- |
 | Sentimen | `C=10`, ngram (1,2), min_df=3 | Accuracy 0.9315 → **0.9380** |
-| Emosi | `C=1`, ngram (1,2), min_df=3 | ≈ tetap (0.6361) |
+| Emosi    | `C=1`, ngram (1,2), min_df=3  | ≈ tetap (0.6361)             |
 
 Tuning paling membantu Sentimen; Emosi sudah mentok di sekitar batas representasi TF-IDF.
 Tanpa flag `--tune`, `train.py` memakai parameter default yang masuk akal.
@@ -243,6 +246,7 @@ yang sudah di-`fit` disimpan (`models/tfidf_vectorizer.joblib`) dan dimuat ulang
 ## 🖥️ Dokumentasi Antarmuka
 
 ### Aplikasi Streamlit (web)
+
 - **Input:** text area untuk ulasan + dropdown contoh siap-pakai. Sidebar berisi info model
   dan kolom **API key OpenRouter** (mengaktifkan fitur AI).
 - **Output:** kartu metrik Sentimen & Emosi + % keyakinan; bar chart distribusi probabilitas;
@@ -250,19 +254,22 @@ yang sudah di-`fit` disimpan (`models/tfidf_vectorizer.joblib`) dan dimuat ulang
   **🤖 Analisis AI** (ringkasan + saran balasan, bila key diisi).
 
 ### REST API (FastAPI)
-| Method & Endpoint | Fungsi |
-|---|---|
-| `GET /` | info layanan + daftar endpoint |
-| `GET /health` | status + daftar kelas + `ai_enabled` |
-| `GET /docs` | dokumentasi interaktif (Swagger UI) |
-| `POST /analyze` | body `{"text":"..."}` → JSON: `sentiment`, `emotion`, `aspects[]`, `ai` |
+
+| Method & Endpoint | Fungsi                                                                  |
+| ----------------- | ----------------------------------------------------------------------- |
+| `GET /`           | info layanan + daftar endpoint                                          |
+| `GET /health`     | status + daftar kelas + `ai_enabled`                                    |
+| `GET /docs`       | dokumentasi interaktif (Swagger UI)                                     |
+| `POST /analyze`   | body `{"text":"..."}` → JSON: `sentiment`, `emotion`, `aspects[]`, `ai` |
 
 Contoh:
+
 ```bash
 curl -X POST https://nlp-api.imadegautama.com/analyze \
   -H "Content-Type: application/json" \
   -d '{"text":"pengiriman cepat tapi barangnya jelek dan harga kemahalan"}'
 ```
+
 Respons memuat `sentiment.label_id`, `emotion.label_id`, `aspects[]` (aspek + sentimen +
 keyakinan + klausa), dan `ai` (`summary` + `suggested_reply`) bila `OPENROUTER_API_KEY` aktif.
 
@@ -273,16 +280,17 @@ keyakinan + klausa), dan `ai` (`summary` + `suggested_reply`) bila `OPENROUTER_A
 LLM **bukan** pengganti model — ia lapisan augmentasi di atas hasil model buatan sendiri.
 Setelah model memberi Sentimen + Emosi + ABSA, modul `src/llm.py` mengirim ringkasan itu ke
 **OpenRouter** (API LLM, skema OpenAI-compatible) untuk menghasilkan:
+
 1. **Ringkasan natural** berbahasa Indonesia, dan
 2. **Saran balasan penjual** yang sopan & solutif.
 
 Detail teknis:
+
 - **Model:** default model gratis (`:free`) dengan **fallback otomatis** antar-model bila kena
   rate-limit (429) — lihat `FALLBACK_MODELS` di `src/llm.py`.
 - **Guardrail:** prompt membatasi LLM hanya pada konteks ulasan/produk.
 - **Opsional & aman gagal:** tanpa API key, seksi AI tidak muncul; model inti tetap jalan.
-- **Konfigurasi `OPENROUTER_API_KEY`** dibaca berurutan: 1. input sidebar Streamlit,
-  2. `.streamlit/secrets.toml` (gitignored), 3. environment variable. Di Coolify: set sebagai
+- **Konfigurasi `OPENROUTER_API_KEY`** dibaca berurutan: 1. input sidebar Streamlit, 2. `.streamlit/secrets.toml` (gitignored), 3. environment variable. Di Coolify: set sebagai
   **env per-resource** (jangan di-commit).
 - Dapatkan key di <https://openrouter.ai/keys>.
 
@@ -318,11 +326,11 @@ git push main ─▶ GitHub Actions ─┬─ Dockerfile.api ─▶ Docker Hub: 
                                                               webhook ─▶ Coolify redeploy
 ```
 
-| Service | Domain | Port |
-|---|---|---|
+| Service   | Domain                           | Port |
+| --------- | -------------------------------- | ---- |
 | Streamlit | `nlp-streamlit.imadegautama.com` | 8501 |
-| REST API | `nlp-api.imadegautama.com` | 8800 |
-| n8n (bot) | `nlp.imadegautama.com` | 5678 |
+| REST API  | `nlp-api.imadegautama.com`       | 8800 |
+| n8n (bot) | `n8n.imadegautama.com`           | 5678 |
 
 `OPENROUTER_API_KEY` di-set sebagai **environment variable per-resource** di Coolify (bukan
 di-bake ke image / di-commit). Karena memakai scikit-learn (bukan TensorFlow), image jalan di
@@ -349,8 +357,8 @@ dibanding sentimen biner (≈93%).
 
 ## 📚 Referensi
 
-- Sutoyo, R., dkk. (2022). *PRDECT-ID: Indonesian product reviews dataset for emotions
-  classification tasks.* Data in Brief.
+- Sutoyo, R., dkk. (2022). _PRDECT-ID: Indonesian product reviews dataset for emotions
+  classification tasks._ Data in Brief.
 - Sastrawi — stemmer Bahasa Indonesia: <https://github.com/har07/PySastrawi>
 - scikit-learn: <https://scikit-learn.org> · Streamlit: <https://streamlit.io>
 - FastAPI: <https://fastapi.tiangolo.com> · OpenRouter: <https://openrouter.ai>
