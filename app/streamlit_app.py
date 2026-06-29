@@ -25,6 +25,9 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from preprocessing import clean_text  # noqa: E402
+from absa import ASPECT_EMOJI, analyze_aspects  # noqa: E402
+from llm import analyze as llm_analyze  # noqa: E402
+from llm import get_api_key  # noqa: E402
 
 MODELS_DIR = ROOT / "models"
 
@@ -126,6 +129,15 @@ with st.sidebar:
         "Teks Anda melewati pra-pemrosesan & TF-IDF yang **identik** dengan "
         "saat pelatihan, lalu diklasifikasikan oleh dua model terpisah."
     )
+    st.markdown("---")
+    st.subheader("🤖 Fitur AI (opsional)")
+    st.text_input(
+        "OpenRouter API key",
+        type="password",
+        key="openrouter_api_key",
+        placeholder="sk-or-...",
+        help="Aktifkan ringkasan natural + saran balasan. Tanpa key, app tetap jalan.",
+    )
 
 contoh_pilih = st.selectbox("Coba contoh ulasan:", list(CONTOH_ULASAN.keys()))
 teks = st.text_area(
@@ -135,12 +147,20 @@ teks = st.text_area(
     placeholder="Contoh: Barangnya bagus, pengiriman cepat, penjual ramah!",
 )
 
+# Tombol Analisis hanya menyimpan teks ke session_state, lalu hasil dirender di
+# bawah berdasarkan session_state. Pola ini membuat tombol "Analisis AI" bisa
+# dipakai tanpa menghapus hasil analisis (Streamlit menjalankan ulang skrip
+# setiap interaksi).
 if st.button("🔍 Analisis", type="primary", use_container_width=True):
     if not teks.strip():
         st.warning("Mohon masukkan teks ulasan terlebih dahulu.")
         st.stop()
+    st.session_state["analyzed_text"] = teks
+    st.session_state.pop("ai_result", None)
 
-    bersih = clean_text(teks)
+txt = st.session_state.get("analyzed_text", "")
+if txt:
+    bersih = clean_text(txt)
     if not bersih:
         st.warning(
             "Setelah dibersihkan, tidak ada kata bermakna yang tersisa. "
@@ -193,6 +213,52 @@ if st.button("🔍 Analisis", type="primary", use_container_width=True):
             )
         else:
             st.write("—")
+
+    st.markdown("#### 🧩 Analisis per Aspek (ABSA)")
+    st.caption(
+        "Ulasan dipecah menjadi klausa, tiap klausa dideteksi aspeknya, "
+        "lalu dinilai oleh model sentimen yang sama."
+    )
+    aspek = analyze_aspects(txt, vectorizer, sentiment_model)
+    if not aspek:
+        st.info("Tidak ada aspek spesifik (pengiriman/kualitas/harga/pelayanan/kemasan) terdeteksi.")
+    else:
+        for nama_aspek, info in aspek.items():
+            s_nama, s_emoji = SENTIMENT_LABELS.get(
+                info["sentiment"], (info["sentiment"], "")
+            )
+            a_emoji = ASPECT_EMOJI.get(nama_aspek, "")
+            warna = "green" if info["sentiment"] == "Positive" else "red"
+            st.markdown(
+                f"- {a_emoji} **{nama_aspek}** → :{warna}[{s_emoji} {s_nama}] "
+                f"· {info['confidence']:.0%} yakin  \n"
+                f"&nbsp;&nbsp;&nbsp;<small><i>«{info['clause']}»</i></small>",
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("#### 🤖 Analisis AI — ringkasan & saran balasan")
+    api_key = get_api_key()
+    if not api_key:
+        st.info(
+            "Masukkan **API key OpenRouter** di sidebar untuk mengaktifkan ringkasan "
+            "natural + saran balasan penjual. (Model inti tetap berfungsi tanpa ini.)"
+        )
+    else:
+        if st.button("✨ Buat ringkasan & saran balasan (AI)"):
+            with st.spinner("Menghubungi AI…"):
+                try:
+                    st.session_state["ai_result"] = llm_analyze(
+                        txt, sent_pred, emo_pred, aspek
+                    )
+                except RuntimeError as exc:
+                    st.session_state["ai_result"] = {"error": str(exc)}
+        ai = st.session_state.get("ai_result")
+        if ai and "error" in ai:
+            st.warning(f"AI tidak tersedia: {ai['error']}")
+        elif ai:
+            st.markdown(f"**🧾 Ringkasan:** {ai['summary']}")
+            st.markdown("**💬 Saran balasan untuk penjual:**")
+            st.success(ai["suggested_reply"])
 
     with st.expander("Lihat teks setelah pra-pemrosesan"):
         st.code(bersih or "(kosong)", language=None)

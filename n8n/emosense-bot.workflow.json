@@ -1,0 +1,125 @@
+{
+  "name": "EmoSense-ID Bot (Telegram)",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "id": "trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300],
+      "credentials": {
+        "telegramApi": { "id": "REPLACE_ME", "name": "Telegram account" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "has-text",
+              "leftValue": "={{ $json.message.text }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists", "singleValue": true }
+            },
+            {
+              "id": "not-start",
+              "leftValue": "={{ $json.message.text }}",
+              "rightValue": "/start",
+              "operator": { "type": "string", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "need-analyze",
+      "name": "Perlu Analisis?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8800/analyze",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $('Telegram Trigger').item.json.message.text }) }}",
+        "options": {}
+      },
+      "id": "analyze",
+      "name": "Analisis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const a = $('Analisis').first().json;\nconst NL = String.fromCharCode(10);\nconst sEmoji = a.sentiment.label === 'Positive' ? '\\ud83d\\ude0a' : '\\ud83d\\ude1e';\nconst emoMap = { Senang: '\\ud83d\\ude04', Sedih: '\\ud83d\\ude22', Marah: '\\ud83d\\ude20', Takut: '\\ud83d\\ude28', Cinta: '\\ud83e\\udd70' };\nconst eEmoji = emoMap[a.emotion.label_id] || '\\ud83c\\udfad';\nconst L = [];\nL.push('\\ud83d\\udcca Hasil Analisis EmoSense-ID');\nL.push('');\nL.push(sEmoji + ' Sentimen: ' + a.sentiment.label_id + ' (' + Math.round(a.sentiment.confidence * 100) + '%)');\nL.push(eEmoji + ' Emosi: ' + a.emotion.label_id + ' (' + Math.round(a.emotion.confidence * 100) + '%)');\nif (a.aspects && a.aspects.length) {\n  L.push('');\n  L.push('\\ud83e\\udde9 Analisis Aspek:');\n  for (const asp of a.aspects) {\n    const mark = asp.sentiment === 'Positive' ? '\\u2705' : '\\u274c';\n    L.push(mark + ' ' + asp.aspect + ': ' + asp.sentiment_id + ' (' + Math.round(asp.confidence * 100) + '%)');\n  }\n}\nif (a.ai && a.ai.summary) {\n  L.push('');\n  L.push('\\ud83e\\udd16 Ringkasan: ' + a.ai.summary);\n  if (a.ai.suggested_reply) {\n    L.push('');\n    L.push('\\ud83d\\udcac Saran balasan untuk penjual:');\n    L.push(a.ai.suggested_reply);\n  }\n}\nreturn [{ json: { reply: L.join(NL) } }];"
+      },
+      "id": "format-reply",
+      "name": "Format Balasan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 200]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $('Format Balasan').item.json.reply }}",
+        "additionalFields": {}
+      },
+      "id": "send-reply",
+      "name": "Kirim Balasan",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [960, 200],
+      "credentials": {
+        "telegramApi": { "id": "REPLACE_ME", "name": "Telegram account" }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "Halo! 👋 Saya EmoSense-ID. Kirim *teks ulasan produk* (mis. \"barangnya bagus tapi pengiriman lama\"), nanti saya analisis sentimen, emosi, dan aspek-aspeknya. 🛍️",
+        "additionalFields": {}
+      },
+      "id": "send-welcome",
+      "name": "Kirim Sambutan",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [480, 420],
+      "credentials": {
+        "telegramApi": { "id": "REPLACE_ME", "name": "Telegram account" }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [[{ "node": "Perlu Analisis?", "type": "main", "index": 0 }]]
+    },
+    "Perlu Analisis?": {
+      "main": [
+        [{ "node": "Analisis", "type": "main", "index": 0 }],
+        [{ "node": "Kirim Sambutan", "type": "main", "index": 0 }]
+      ]
+    },
+    "Analisis": {
+      "main": [[{ "node": "Format Balasan", "type": "main", "index": 0 }]]
+    },
+    "Format Balasan": {
+      "main": [[{ "node": "Kirim Balasan", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

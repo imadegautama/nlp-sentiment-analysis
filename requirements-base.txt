@@ -1,0 +1,8 @@
+# Dependensi INTI yang dipakai bersama oleh training, Streamlit, dan REST API.
+# Diimpor oleh requirements.txt dan requirements-api.txt via `-r requirements-base.txt`.
+pandas>=2.0
+numpy>=1.24
+scikit-learn>=1.3
+PySastrawi>=1.2.0
+joblib>=1.3
+requests>=2.31

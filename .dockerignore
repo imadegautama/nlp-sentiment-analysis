@@ -1,0 +1,20 @@
+# Konteks build ramping — kecualikan yang tak perlu ada di image.
+# models/ TIDAK dikecualikan (dibutuhkan saat runtime → image mandiri).
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+data/
+reports/
+notebooks/
+docs/
+.playwright-mcp/
+*.log
+NLPMalam.pdf
+.streamlit/secrets.toml
+.DS_Store
+.claude/

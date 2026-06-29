@@ -1,14 +1,15 @@
-# 💬 EmoSense-ID — Analisis Sentimen & Emosi Ulasan Produk Indonesia
+# 💬 EmoSense-ID — Analisis Sentimen, Emosi & Aspek Ulasan Produk Indonesia
 
-Sistem NLP yang menerima teks ulasan produk berbahasa Indonesia, lalu memprediksi
-**dua hal sekaligus**:
+Sistem NLP yang menerima teks ulasan produk berbahasa Indonesia, lalu menganalisis:
 
 - **Sentimen** — Positif / Negatif
 - **Emosi** — Senang / Sedih / Marah / Takut / Cinta
+- **Aspek (ABSA)** — sentimen per-aspek: Pengiriman, Kualitas Produk, Harga, Pelayanan, Kemasan
 
-Model dilatih dengan **TF-IDF + Logistic Regression** (scikit-learn) di atas dataset
-**PRDECT-ID**, lalu disajikan lewat aplikasi web **Streamlit** yang juga menjelaskan
-*kata-kata paling berpengaruh* di balik tiap prediksi (explainability).
+Inti model dilatih sendiri dengan **TF-IDF + Logistic Regression** (scikit-learn) di atas
+dataset **PRDECT-ID**. Di atasnya ada **lapisan AI opsional** (OpenRouter) yang merangkum
+hasil + menyusun saran balasan penjual. Sistem disajikan lewat **3 antarmuka** yang berbagi
+satu inti: **Streamlit** (web), **FastAPI** (REST API), dan **bot Telegram** (via n8n).
 
 > Proyek UAS mata kuliah Natural Language Processing — Informatika, Primakara University.
 
@@ -18,13 +19,18 @@ Model dilatih dengan **TF-IDF + Logistic Regression** (scikit-learn) di atas dat
 
 ## ✨ Fitur Unggulan
 
-1. **Dua tugas dalam satu sistem** — sentimen *dan* emosi dari satu ulasan.
+1. **Tiga lapis analisis** — Sentimen + Emosi + **Aspect-Based Sentiment Analysis (ABSA)**.
+   ABSA memecah ulasan jadi klausa, mendeteksi aspek, lalu menilai sentimen tiap aspek —
+   jadi *"barangnya bagus tapi pengiriman lama"* terbaca: Kualitas = Positif, Pengiriman = Negatif.
 2. **Explainability** — menampilkan kata (termasuk bigram seperti `tidak sesuai`)
    yang paling mendorong sebuah prediksi, dihitung dari koefisien model linear.
 3. **Penanganan negasi** — kata seperti *tidak, bukan, jangan* sengaja dipertahankan
    saat pra-pemrosesan agar makna `tidak bagus` tidak terbalik menjadi `bagus`.
-4. **Skor keyakinan** divisualkan sebagai bar chart per kelas.
-5. **Konsistensi train/inference** — teks pengguna melewati pra-pemrosesan & TF-IDF
+4. **Lapisan AI (opsional)** — LLM via OpenRouter merangkum hasil secara natural +
+   menyusun **saran balasan penjual**. Jika tanpa API key, sistem inti tetap berjalan normal.
+5. **Tiga antarmuka, satu inti** — Streamlit (web), FastAPI (REST API), dan bot Telegram (n8n)
+   memakai logika yang sama di `src/`.
+6. **Konsistensi train/inference** — teks pengguna melewati pra-pemrosesan & TF-IDF
    yang identik dengan saat pelatihan (satu sumber kode: `src/preprocessing.py`).
 
 ---
@@ -34,22 +40,47 @@ Model dilatih dengan **TF-IDF + Logistic Regression** (scikit-learn) di atas dat
 ```
 uas-nlp/
 ├── data/
-│   ├── prdect_id.csv               # dataset (unduh via src/download_data.py)
-│   └── prdect_id_clean.parquet     # cache teks hasil pra-pemrosesan (auto)
+│   └── prdect_id.csv               # dataset (unduh via src/download_data.py)
 ├── src/
 │   ├── download_data.py            # unduh dataset PRDECT-ID
-│   ├── preprocessing.py            # clean_text() — dipakai training & app
+│   ├── preprocessing.py            # clean_text() — dipakai SEMUA antarmuka
 │   ├── train.py                    # TF-IDF + bandingkan model + latih + simpan
-│   └── evaluate.py                 # metrik + confusion matrix
+│   ├── evaluate.py                 # metrik + confusion matrix
+│   ├── absa.py                     # Aspect-Based Sentiment Analysis (ABSA)
+│   └── llm.py                      # lapisan AI OpenRouter (opsional)
 ├── models/                         # artefak hasil training (.joblib + metadata)
 ├── reports/                        # confusion matrix, ringkasan metrik, demo
 ├── notebooks/
 │   └── 01_eksplorasi_data.ipynb    # EDA
 ├── app/
-│   └── streamlit_app.py            # aplikasi web
-├── requirements.txt
+│   └── streamlit_app.py            # antarmuka WEB (Streamlit)
+├── api.py                          # antarmuka REST API (FastAPI)
+├── n8n/
+│   └── emosense-bot.workflow.json  # antarmuka BOT Telegram (n8n)
+├── docs/
+│   └── TELEGRAM_N8N.md             # panduan setup bot Telegram
+├── requirements.txt                # dependensi training + Streamlit
+├── requirements-api.txt            # dependensi REST API (ringan, tanpa Streamlit)
 └── README.md
 ```
+
+## 🏗️ Arsitektur (3 antarmuka, 1 inti)
+
+```
+            ┌──────────── INTI (folder src/) ────────────┐
+            │  preprocessing.clean_text                   │
+            │  TF-IDF + model Sentimen & Emosi (.joblib)  │
+            │  absa.analyze_aspects   (ABSA)              │
+            │  llm.analyze            (OpenRouter, opsional)│
+            └─────▲────────────▲────────────▲─────────────┘
+          Streamlit (web)  FastAPI (api.py)  (LLM dipanggil inti)
+          untuk MANUSIA    untuk MESIN/BOT
+                                ▲ HTTP POST /analyze
+                          n8n + Bot Telegram (CHAT)
+```
+
+Logika inti ditulis sekali di `src/` lalu dipakai bersama oleh Streamlit, FastAPI,
+dan (lewat FastAPI) bot Telegram.
 
 ---
 
@@ -105,6 +136,24 @@ Aplikasi akan terbuka di <http://localhost:8501>.
 
 > Untuk membuka notebook EDA: `pip install jupyter` lalu
 > `jupyter notebook notebooks/01_eksplorasi_data.ipynb`.
+>
+> Untuk mengaktifkan **fitur AI** (ringkasan + saran balasan), isi API key OpenRouter di
+> sidebar Streamlit, atau set `OPENROUTER_API_KEY` sebelum menjalankan.
+
+### Menjalankan REST API (FastAPI)
+
+```bash
+pip install -r requirements-api.txt
+# tanpa AI:
+uvicorn api:app --host 0.0.0.0 --port 8800
+# dengan AI:
+OPENROUTER_API_KEY="sk-or-..." uvicorn api:app --port 8800
+```
+Cek: `curl http://localhost:8800/health`. Lihat endpoint di bawah.
+
+### Menjalankan Bot Telegram (n8n)
+Import `n8n/emosense-bot.workflow.json` ke n8n, set kredensial Telegram, arahkan node
+**Analisis** ke URL API Anda. Panduan lengkap: [`docs/TELEGRAM_N8N.md`](docs/TELEGRAM_N8N.md).
 
 ---
 
@@ -145,11 +194,16 @@ clean_text()  ── case folding → hapus URL/angka/simbol → hapus stopword
 TfidfVectorizer  ── unigram + bigram, sublinear_tf, min_df=3  → vektor fitur
    │
    ├──► Logistic Regression (Sentimen)  → label + probabilitas
-   └──► Logistic Regression (Emosi)     → label + probabilitas
+   ├──► Logistic Regression (Emosi)     → label + probabilitas
+   │         │
+   │         └─► Explainability: nilai TF-IDF × koefisien → kata berpengaruh
+   │
+   └──► ABSA (src/absa.py): pecah klausa → deteksi aspek (leksikon) →
+            jalankan model Sentimen per klausa → sentimen per-aspek
                                             │
                                             ▼
-                       Explainability: nilai TF-IDF × koefisien
-                       → kata paling berpengaruh untuk kelas terprediksi
+              LLM (src/llm.py, OpenRouter, opsional): ringkasan natural
+              + saran balasan penjual  →  ditampilkan / dibalas bot
 ```
 
 **Penting:** langkah `clean_text()` dan `TfidfVectorizer` yang sama persis dipakai

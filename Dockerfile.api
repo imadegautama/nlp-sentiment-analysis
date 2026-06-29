@@ -1,0 +1,33 @@
+# =============================================================================
+# Dockerfile.api — REST API FastAPI (api.py) untuk bot Telegram / integrasi.
+# -----------------------------------------------------------------------------
+# Mengikuti pola Dockerfile proyek UAS Pembelajaran Mesin. Satu-satunya beda:
+# install `libgomp1` (OpenMP) yang dibutuhkan scikit-learn saat runtime — pada
+# proyek ML, TensorFlow yang menyediakannya. Tanpa ini, image crash saat
+# `import sklearn`. Karena pakai scikit-learn (bukan TensorFlow), image ini
+# jalan di arsitektur apa pun (x86_64 & arm64) — bebas isu AVX.
+# =============================================================================
+
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# libgomp1 wajib untuk scikit-learn pada image slim.
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install dependency API dulu (layer terpisah → cache build lebih cepat).
+# requirements-api.txt memuat `-r requirements-base.txt`, jadi keduanya disalin.
+COPY requirements-base.txt requirements-api.txt ./
+RUN pip install --no-cache-dir -r requirements-api.txt
+
+# Salin sisa kode + model (models/*.joblib ter-commit → ikut masuk image).
+COPY . .
+
+# Coolify/host bisa memberi $PORT; fallback 8800 untuk lokal.
+EXPOSE 8800
+CMD uvicorn api:app --host 0.0.0.0 --port ${PORT:-8800}

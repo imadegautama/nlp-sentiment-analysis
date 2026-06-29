@@ -1,0 +1,5 @@
+# Dependensi untuk REST API (api.py) — TANPA streamlit/matplotlib agar ringan.
+# Install: pip install -r requirements-api.txt
+-r requirements-base.txt
+fastapi>=0.110
+uvicorn[standard]>=0.27
