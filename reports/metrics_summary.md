@@ -2,18 +2,18 @@
 
 ## Tugas: Sentimen
 
-- **Accuracy**: 0.9315
-- **Macro-F1**: 0.9311
+- **Accuracy**: 0.9380
+- **Macro-F1**: 0.9377
 
 ```
               precision    recall  f1-score   support
 
-    Negative     0.9125    0.9610    0.9361       564
-    Positive     0.9547    0.8992    0.9261       516
+    Negative     0.9219    0.9628    0.9419       564
+    Positive     0.9572    0.9109    0.9335       516
 
-    accuracy                         0.9315      1080
-   macro avg     0.9336    0.9301    0.9311      1080
-weighted avg     0.9327    0.9315    0.9313      1080
+    accuracy                         0.9380      1080
+   macro avg     0.9396    0.9368    0.9377      1080
+weighted avg     0.9388    0.9380    0.9379      1080
 ```
 
 ![Confusion Matrix Sentimen](confusion_matrix_sentimen.png)

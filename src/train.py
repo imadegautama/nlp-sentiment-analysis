@@ -18,6 +18,7 @@ Kenapa Logistic Regression sebagai model final:
 Jalankan: python src/train.py
 """
 
+import argparse
 import json
 from pathlib import Path
 
@@ -25,8 +26,9 @@ import joblib
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import cross_val_score, train_test_split
+from sklearn.model_selection import GridSearchCV, cross_val_score, train_test_split
 from sklearn.naive_bayes import MultinomialNB
+from sklearn.pipeline import Pipeline
 from sklearn.svm import LinearSVC
 
 from preprocessing import clean_text
@@ -94,64 +96,151 @@ def compare_models(X_train, y_train, task_name: str) -> None:
         print(f"  {name:<22}: {scores.mean():.4f} (+/- {scores.std():.4f})")
 
 
-def train_final(X_train, y_train) -> LogisticRegression:
+def train_final(X_train, y_train, C: float = 1.0) -> LogisticRegression:
     """Latih model final (Logistic Regression) pada seluruh data latih."""
-    model = LogisticRegression(max_iter=1000, class_weight="balanced")
+    model = LogisticRegression(max_iter=1000, class_weight="balanced", C=C)
     model.fit(X_train, y_train)
     return model
 
 
-def main() -> None:
+# Grid hyperparameter untuk tuning (TF-IDF + Logistic Regression).
+_PARAM_GRID = {
+    "tfidf__ngram_range": [(1, 1), (1, 2)],
+    "tfidf__min_df": [2, 3, 5],
+    "tfidf__max_features": [10_000, 20_000, None],
+    "clf__C": [0.1, 1, 3, 10],
+}
+
+
+def tune_models(df_train):
+    """Hyperparameter tuning via GridSearchCV (scoring=macro-F1, cv=5).
+
+    Strategi (mempertahankan arsitektur 1 vectorizer + 2 model):
+      1. Tuning Pipeline(TF-IDF → LogReg) penuh pada tugas **Emosi** (tugas tersulit
+         & paling diuntungkan) → menentukan hyperparameter TF-IDF bersama + C emosi.
+      2. Bangun vectorizer bersama dengan param TF-IDF terbaik, fit di data latih.
+      3. Tuning `C` untuk Sentimen pada fitur tersebut.
+    Mengembalikan (vectorizer, model_sentimen, model_emosi, info_tuning).
+    """
+    base = LogisticRegression(max_iter=1000, class_weight="balanced")
+    pipe = Pipeline([("tfidf", TfidfVectorizer(sublinear_tf=True)), ("clf", base)])
+
+    print("\n=== Tuning (GridSearchCV, macro-F1) — Emosi ===")
+    print(f"Mencoba {2*3*3*4} kombinasi × 5 fold ...")
+    gs_emo = GridSearchCV(pipe, _PARAM_GRID, scoring="f1_macro", cv=5, n_jobs=-1)
+    gs_emo.fit(df_train["clean"], df_train["Emotion"])
+    best = gs_emo.best_params_
+    print(f"  Best params : {best}")
+    print(f"  CV macro-F1 : {gs_emo.best_score_:.4f}")
+
+    tfidf_params = dict(
+        ngram_range=best["tfidf__ngram_range"],
+        min_df=best["tfidf__min_df"],
+        max_features=best["tfidf__max_features"],
+        sublinear_tf=True,
+    )
+    c_emo = best["clf__C"]
+
+    # Vectorizer bersama dengan param terbaik.
+    vectorizer = TfidfVectorizer(**tfidf_params)
+    X_train = vectorizer.fit_transform(df_train["clean"])
+
+    # Tuning C untuk Sentimen pada fitur yang sudah ditentukan.
+    print("\n=== Tuning (GridSearchCV, macro-F1) — Sentimen (parameter C) ===")
+    gs_sent = GridSearchCV(
+        LogisticRegression(max_iter=1000, class_weight="balanced"),
+        {"C": [0.1, 1, 3, 10]}, scoring="f1_macro", cv=5, n_jobs=-1,
+    )
+    gs_sent.fit(X_train, df_train["Sentiment"])
+    c_sent = gs_sent.best_params_["C"]
+    print(f"  Best C      : {c_sent}")
+    print(f"  CV macro-F1 : {gs_sent.best_score_:.4f}")
+
+    model_sent = train_final(X_train, df_train["Sentiment"], C=c_sent)
+    model_emo = train_final(X_train, df_train["Emotion"], C=c_emo)
+
+    info = {
+        "tuned": True,
+        "method": "GridSearchCV (cv=5, scoring=f1_macro)",
+        "tfidf_params": {k: str(v) for k, v in tfidf_params.items()},
+        "C": {"Sentimen": c_sent, "Emosi": c_emo},
+        "cv_f1_macro": {
+            "Sentimen": round(float(gs_sent.best_score_), 4),
+            "Emosi": round(float(gs_emo.best_score_), 4),
+        },
+    }
+    return vectorizer, model_sent, model_emo, info
+
+
+def main(tune: bool = False) -> None:
     MODELS_DIR.mkdir(exist_ok=True)
     df_train, df_test = load_and_split()
     print(f"Data latih: {len(df_train)} | Data uji: {len(df_test)}")
 
-    # Representasi fitur: fit HANYA pada data latih, lalu transform keduanya.
-    vectorizer = build_vectorizer()
-    X_train = vectorizer.fit_transform(df_train["clean"])
-    X_test = vectorizer.transform(df_test["clean"])
-    print(f"Dimensi fitur TF-IDF: {X_train.shape[1]} fitur")
+    tuning_info = {"tuned": False}
+    models = {}  # task -> (model, fname)
+
+    if tune:
+        # Jalur tuning: GridSearchCV menentukan hyperparameter terbaik.
+        vectorizer, model_sent, model_emo, tuning_info = tune_models(df_train)
+        X_test = vectorizer.transform(df_test["clean"])
+        models = {
+            "Sentimen": (model_sent, "Sentiment", "classic_sentiment.joblib"),
+            "Emosi": (model_emo, "Emotion", "classic_emotion.joblib"),
+        }
+        vec_desc = ", ".join(f"{k}={v}" for k, v in tuning_info["tfidf_params"].items())
+    else:
+        # Jalur default: parameter manual + perbandingan model.
+        vectorizer = build_vectorizer()
+        X_train = vectorizer.fit_transform(df_train["clean"])
+        for task, col, fname in [
+            ("Sentimen", "Sentiment", "classic_sentiment.joblib"),
+            ("Emosi", "Emotion", "classic_emotion.joblib"),
+        ]:
+            compare_models(X_train, df_train[col], task)
+            models[task] = (train_final(X_train, df_train[col]), col, fname)
+        X_test = vectorizer.transform(df_test["clean"])
+        vec_desc = "TF-IDF (1,2)-gram, sublinear_tf, min_df=3"
+
+    n_features = len(vectorizer.get_feature_names_out())
+    print(f"\nDimensi fitur TF-IDF: {n_features} fitur")
 
     metadata = {
-        "n_features": int(X_train.shape[1]),
+        "n_features": int(n_features),
         "n_train": int(len(df_train)),
         "n_test": int(len(df_test)),
-        "vectorizer": "TF-IDF (1,2)-gram, sublinear_tf, min_df=3",
+        "vectorizer": vec_desc,
         "final_model": "LogisticRegression(class_weight='balanced')",
+        "tuning": tuning_info,
         "tasks": {},
     }
 
-    for task, col, fname in [
-        ("Sentimen", "Sentiment", "classic_sentiment.joblib"),
-        ("Emosi", "Emotion", "classic_emotion.joblib"),
-    ]:
-        y_train, y_test = df_train[col], df_test[col]
-        compare_models(X_train, y_train, task)
-
-        model = train_final(X_train, y_train)
-        test_acc = model.score(X_test, y_test)
-        print(f"  -> Model final {task}: akurasi data uji = {test_acc:.4f}")
-
+    # Evaluasi & simpan tiap model.
+    for task, (model, col, fname) in models.items():
+        test_acc = model.score(X_test, df_test[col])
+        print(f"  -> Model final {task}: akurasi data uji = {test_acc:.4f} (C={model.C})")
         joblib.dump(model, MODELS_DIR / fname)
         metadata["tasks"][task] = {
             "label_col": col,
             "classes": list(model.classes_),
             "test_accuracy": round(float(test_acc), 4),
+            "C": float(model.C),
             "model_file": fname,
         }
 
-    # Simpan vectorizer (komponen pra-pemrosesan) & metadata.
     joblib.dump(vectorizer, MODELS_DIR / "tfidf_vectorizer.joblib")
     (MODELS_DIR / "metadata.json").write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False)
     )
 
-    print(f"\nSelesai. Artefak tersimpan di {MODELS_DIR}/")
-    print("  - tfidf_vectorizer.joblib")
-    print("  - classic_sentiment.joblib")
-    print("  - classic_emotion.joblib")
-    print("  - metadata.json")
+    print(f"\nSelesai ({'TUNED' if tune else 'default'}). Artefak tersimpan di {MODELS_DIR}/")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Latih model EmoSense-ID.")
+    parser.add_argument(
+        "--tune", action="store_true",
+        help="Jalankan hyperparameter tuning (GridSearchCV) sebelum melatih model final.",
+    )
+    args = parser.parse_args()
+    main(tune=args.tune)

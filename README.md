@@ -15,6 +15,16 @@ satu inti: **Streamlit** (web), **FastAPI** (REST API), dan **bot Telegram** (vi
 
 ![Demo aplikasi EmoSense-ID](reports/demo_app.png)
 
+## 🌐 Demo Live
+
+| Antarmuka | URL |
+|---|---|
+| 🖥️ Aplikasi web (Streamlit) | <https://nlp-streamlit.imadegautama.com> |
+| 🔌 REST API (FastAPI) | <https://nlp-api.imadegautama.com> — coba <https://nlp-api.imadegautama.com/docs> |
+| 🤖 n8n (orkestrator bot Telegram) | <https://nlp.imadegautama.com> |
+
+Ketiganya di-deploy di **Coolify** lewat pipeline CI/CD (lihat [Deployment](#️-deployment-coolify)).
+
 ---
 
 ## ✨ Fitur Unggulan
@@ -51,7 +61,8 @@ uas-nlp/
 ├── models/                         # artefak hasil training (.joblib + metadata)
 ├── reports/                        # confusion matrix, ringkasan metrik, demo
 ├── notebooks/
-│   └── 01_eksplorasi_data.ipynb    # EDA
+│   ├── 01_eksplorasi_data.ipynb    # EDA (distribusi label, panjang teks)
+│   └── 02_pelatihan_model.ipynb    # pelatihan + evaluasi langkah demi langkah
 ├── app/
 │   └── streamlit_app.py            # antarmuka WEB (Streamlit)
 ├── api.py                          # antarmuka REST API (FastAPI)
@@ -161,7 +172,7 @@ Import `n8n/emosense-bot.workflow.json` ke n8n, set kredensial Telegram, arahkan
 
 | Tugas | Accuracy | Macro-F1 |
 |---|---|---|
-| **Sentimen** | 0.9315 | 0.9311 |
+| **Sentimen** | 0.9380 | 0.9377 |
 | **Emosi** | 0.6361 | 0.6086 |
 
 Perbandingan kandidat model (5-fold CV, macro-F1) yang mendasari pemilihan
@@ -176,6 +187,22 @@ Perbandingan kandidat model (5-fold CV, macro-F1) yang mendasari pemilihan
 Logistic Regression menang pada tugas Emosi (yang lebih sulit) dan setara pada Sentimen,
 **sekaligus** menyediakan `predict_proba` (skor keyakinan) dan `coef_` (explainability) —
 karena itu dipilih sebagai model final.
+
+### Hyperparameter Tuning (GridSearchCV)
+Selain memilih model, hyperparameter di-*tune* dengan **GridSearchCV** (cv=5, `scoring=f1_macro`)
+di atas `Pipeline(TF-IDF → LogReg)` — vectorizer di-refit per-fold (tanpa kebocoran data).
+
+```bash
+python src/train.py --tune
+```
+
+| Tugas | Hyperparameter terbaik | Dampak |
+|---|---|---|
+| Sentimen | `C=10`, ngram (1,2), min_df=3 | Accuracy 0.9315 → **0.9380** |
+| Emosi | `C=1`, ngram (1,2), min_df=3 | ≈ tetap (0.6361) |
+
+Tuning paling membantu Sentimen; Emosi sudah mentok di sekitar batas representasi TF-IDF.
+Tanpa flag `--tune`, `train.py` memakai parameter default yang masuk akal.
 
 Confusion matrix tersimpan di `reports/confusion_matrix_sentimen.png` dan
 `reports/confusion_matrix_emosi.png`. Ringkasan lengkap: `reports/metrics_summary.md`.
@@ -213,34 +240,110 @@ yang sudah di-`fit` disimpan (`models/tfidf_vectorizer.joblib`) dan dimuat ulang
 
 ---
 
-## 🖥️ Dokumentasi Antarmuka (Aplikasi Streamlit)
+## 🖥️ Dokumentasi Antarmuka
 
-- **Input:** sebuah text area untuk mengetik/menempel ulasan, plus dropdown contoh siap-pakai.
-- **Output:**
-  - dua kartu metrik (Sentimen & Emosi) beserta % keyakinan;
-  - dua bar chart distribusi probabilitas tiap kelas;
-  - dua tabel "kata paling berpengaruh" terhadap prediksi;
-  - expander untuk melihat teks setelah pra-pemrosesan.
-- **Sidebar:** ringkasan informasi model (dataset, representasi, jumlah fitur, akurasi).
+### Aplikasi Streamlit (web)
+- **Input:** text area untuk ulasan + dropdown contoh siap-pakai. Sidebar berisi info model
+  dan kolom **API key OpenRouter** (mengaktifkan fitur AI).
+- **Output:** kartu metrik Sentimen & Emosi + % keyakinan; bar chart distribusi probabilitas;
+  tabel **kata paling berpengaruh**; seksi **🧩 Analisis per Aspek (ABSA)**; dan seksi
+  **🤖 Analisis AI** (ringkasan + saran balasan, bila key diisi).
+
+### REST API (FastAPI)
+| Method & Endpoint | Fungsi |
+|---|---|
+| `GET /` | info layanan + daftar endpoint |
+| `GET /health` | status + daftar kelas + `ai_enabled` |
+| `GET /docs` | dokumentasi interaktif (Swagger UI) |
+| `POST /analyze` | body `{"text":"..."}` → JSON: `sentiment`, `emotion`, `aspects[]`, `ai` |
+
+Contoh:
+```bash
+curl -X POST https://nlp-api.imadegautama.com/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"text":"pengiriman cepat tapi barangnya jelek dan harga kemahalan"}'
+```
+Respons memuat `sentiment.label_id`, `emotion.label_id`, `aspects[]` (aspek + sentimen +
+keyakinan + klausa), dan `ai` (`summary` + `suggested_reply`) bila `OPENROUTER_API_KEY` aktif.
 
 ---
 
-## ☁️ Deployment ke Streamlit Community Cloud
+## 🤖 Lapisan AI (OpenRouter)
 
-1. *Push* repository ini ke GitHub (sertakan folder `models/` — ukurannya kecil, ~300 KB).
-2. Buka <https://share.streamlit.io> → **New app** → pilih repo & branch.
-3. Set **Main file path** ke `app/streamlit_app.py`.
-4. Streamlit Cloud otomatis membaca `requirements.txt`. Klik **Deploy**.
+LLM **bukan** pengganti model — ia lapisan augmentasi di atas hasil model buatan sendiri.
+Setelah model memberi Sentimen + Emosi + ABSA, modul `src/llm.py` mengirim ringkasan itu ke
+**OpenRouter** (API LLM, skema OpenAI-compatible) untuk menghasilkan:
+1. **Ringkasan natural** berbahasa Indonesia, dan
+2. **Saran balasan penjual** yang sopan & solutif.
 
-Karena model berbasis TF-IDF berukuran kecil, aplikasi berjalan ringan di *free tier*.
+Detail teknis:
+- **Model:** default model gratis (`:free`) dengan **fallback otomatis** antar-model bila kena
+  rate-limit (429) — lihat `FALLBACK_MODELS` di `src/llm.py`.
+- **Guardrail:** prompt membatasi LLM hanya pada konteks ulasan/produk.
+- **Opsional & aman gagal:** tanpa API key, seksi AI tidak muncul; model inti tetap jalan.
+- **Konfigurasi `OPENROUTER_API_KEY`** dibaca berurutan: 1. input sidebar Streamlit,
+  2. `.streamlit/secrets.toml` (gitignored), 3. environment variable. Di Coolify: set sebagai
+  **env per-resource** (jangan di-commit).
+- Dapatkan key di <https://openrouter.ai/keys>.
+
+---
+
+## 💬 Bot Telegram (n8n)
+
+Antarmuka chat dibangun di **n8n** (workflow: `n8n/emosense-bot.workflow.json`). Alur:
+
+```
+User kirim ulasan → Telegram Trigger → (cek /start) → HTTP POST /analyze
+   → Format Balasan (Code node) → Kirim Balasan ke Telegram
+```
+
+- n8n **tidak** memanggil OpenRouter langsung — ia hanya memanggil `POST /analyze`; lapisan AI
+  dijalankan di sisi API. Jadi `OPENROUTER_API_KEY` cukup ada di server API.
+- Setelah **import JSON**, hanya perlu 2 setelan manual: **kredensial Telegram** (3 node) dan
+  **URL node `Analisis`** (arahkan ke domain API, mis. `https://nlp-api.imadegautama.com/analyze`).
+- Panduan lengkap: [`docs/TELEGRAM_N8N.md`](docs/TELEGRAM_N8N.md).
+
+---
+
+## ☁️ Deployment (Coolify)
+
+Sistem ini di-deploy ke **Coolify** dengan pipeline CI/CD: **push ke `main`** → GitHub Actions
+build 2 image (API + Streamlit) → **Docker Hub** → trigger redeploy 2 resource Coolify lewat
+webhook. n8n berjalan sebagai service Coolify tersendiri.
+
+```
+git push main ─▶ GitHub Actions ─┬─ Dockerfile.api ─▶ Docker Hub: emosense-api ─┐
+                                 └─ Dockerfile     ─▶ Docker Hub: emosense-streamlit ─┤
+                                                                                     ▼
+                                                              webhook ─▶ Coolify redeploy
+```
+
+| Service | Domain | Port |
+|---|---|---|
+| Streamlit | `nlp-streamlit.imadegautama.com` | 8501 |
+| REST API | `nlp-api.imadegautama.com` | 8800 |
+| n8n (bot) | `nlp.imadegautama.com` | 5678 |
+
+`OPENROUTER_API_KEY` di-set sebagai **environment variable per-resource** di Coolify (bukan
+di-bake ke image / di-commit). Karena memakai scikit-learn (bukan TensorFlow), image jalan di
+arsitektur apa pun — bebas isu AVX. **Panduan lengkap:** [`docs/COOLIFY_DEPLOY.md`](docs/COOLIFY_DEPLOY.md).
+
+> Alternatif untuk web app saja: Streamlit Community Cloud (baca `requirements.txt`, main file
+> `app/streamlit_app.py`) — ringan karena model TF-IDF berukuran kecil.
 
 ---
 
 ## 📝 Catatan Akademik
 
 Setiap baris kode dapat dijelaskan: TF-IDF, perbedaan Logistic Regression / SVM / Naive
-Bayes, metrik precision/recall/F1, pembacaan confusion matrix, serta alasan menjaga kata
-negasi. Proyek ini menekankan **pemahaman**, bukan sekadar menjalankan kode.
+Bayes, metrik precision/recall/F1, pembacaan confusion matrix, alasan menjaga kata negasi,
+serta cara **ABSA** memecah klausa & memetakan aspek (berbasis aturan + model). **Inti yang
+dinilai = model buatan sendiri**; lapisan LLM (OpenRouter) & bot (n8n) adalah augmentasi/
+antarmuka, bukan pengganti model. Proyek ini menekankan **pemahaman**, bukan sekadar menjalankan kode.
+
+Batasan yang jujur disampaikan: ABSA berbasis leksikon bisa meleset pada kata gaul di luar
+kosakata (mis. "jutek") → ditandai dengan keyakinan rendah; emosi 5-kelas lebih sulit (≈64%)
+dibanding sentimen biner (≈93%).
 
 ---
 
@@ -250,3 +353,5 @@ negasi. Proyek ini menekankan **pemahaman**, bukan sekadar menjalankan kode.
   classification tasks.* Data in Brief.
 - Sastrawi — stemmer Bahasa Indonesia: <https://github.com/har07/PySastrawi>
 - scikit-learn: <https://scikit-learn.org> · Streamlit: <https://streamlit.io>
+- FastAPI: <https://fastapi.tiangolo.com> · OpenRouter: <https://openrouter.ai>
+- n8n (otomasi/orkestrasi): <https://n8n.io> · Coolify (deploy): <https://coolify.io>

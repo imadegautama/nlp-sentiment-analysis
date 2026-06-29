@@ -2,8 +2,26 @@
   "n_features": 3602,
   "n_train": 4318,
   "n_test": 1080,
-  "vectorizer": "TF-IDF (1,2)-gram, sublinear_tf, min_df=3",
+  "vectorizer": "ngram_range=(1, 2), min_df=3, max_features=10000, sublinear_tf=True",
   "final_model": "LogisticRegression(class_weight='balanced')",
+  "tuning": {
+    "tuned": true,
+    "method": "GridSearchCV (cv=5, scoring=f1_macro)",
+    "tfidf_params": {
+      "ngram_range": "(1, 2)",
+      "min_df": "3",
+      "max_features": "10000",
+      "sublinear_tf": "True"
+    },
+    "C": {
+      "Sentimen": 10,
+      "Emosi": 1
+    },
+    "cv_f1_macro": {
+      "Sentimen": 0.9447,
+      "Emosi": 0.5847
+    }
+  },
   "tasks": {
     "Sentimen": {
       "label_col": "Sentiment",
@@ -11,7 +29,8 @@
         "Negative",
         "Positive"
       ],
-      "test_accuracy": 0.9315,
+      "test_accuracy": 0.938,
+      "C": 10.0,
       "model_file": "classic_sentiment.joblib"
     },
     "Emosi": {
@@ -24,6 +43,7 @@
         "Sadness"
       ],
       "test_accuracy": 0.6361,
+      "C": 1.0,
       "model_file": "classic_emotion.joblib"
     }
   }

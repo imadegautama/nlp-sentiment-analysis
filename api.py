@@ -60,6 +60,19 @@ class AnalyzeRequest(BaseModel):
     text: str
 
 
+@app.get("/")
+def root():
+    """Info ringkas + arahan ke endpoint yang tersedia (mencegah 404 membingungkan)."""
+    return {
+        "service": "EmoSense-ID API",
+        "endpoints": {
+            "GET /health": "cek status & kelas",
+            "POST /analyze": "analisis ulasan (body JSON: {\"text\": \"...\"})",
+            "GET /docs": "dokumentasi interaktif (Swagger UI)",
+        },
+    }
+
+
 @app.get("/health")
 def health():
     return {
